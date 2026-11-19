@@ -1,107 +1,112 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Neon Coast Cover Studio — GTA 6-style cover maker</title>
-<meta name="description" content="Turn your photo and a caption into GTA 6-style cover art, offline in your browser. No upload, no account.">
-<link rel="icon" href="data:,">
-<link rel="stylesheet" href="./style.css">
+<title>Vice Sunset Cover Lab — GTA-style cover art maker</title>
+<meta name="description" content="Turn your photo and a caption into Vice City sunset cover art, offline in your browser. No uploads, no watermark.">
+<link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body data-theme="dark">
 <header class="topbar">
-  <div>
-    <h1>Neon Coast Cover Studio</h1>
-    <p>GTA 6-style cover maker — your photo, your caption, a poster in seconds. Photos never leave this machine.</p>
+  <div class="brand">
+    <h1>Vice Sunset Cover Lab</h1>
+    <p>Your photo, your caption, a poster in seconds. Photos never leave this machine.</p>
   </div>
   <div class="top-actions">
-    <button id="undo" type="button" disabled>Undo</button>
-    <button id="redo" type="button" disabled>Redo</button>
-    <button id="theme-toggle" type="button">Light mode</button>
+    <button id="undoBtn" type="button" title="Undo (Ctrl+Z)">Undo</button>
+    <button id="redoBtn" type="button" title="Redo (Ctrl+Y)">Redo</button>
+    <button id="themeBtn" type="button">Light mode</button>
   </div>
 </header>
 
-<main class="studio">
-  <section class="controls" aria-label="Cover controls">
-    <div class="group" id="drop-zone">
-      <h2>1 · Photos</h2>
-      <p class="hint">Drop photos here or pick files. Click a thumbnail to put it in the selected panel; click a panel on the cover to select it, drag to pan, scroll to zoom.</p>
-      <label class="file-btn">Add photos
-        <input id="photo-input" type="file" accept="image/*" multiple>
+<main class="workspace">
+  <aside class="panel" aria-label="Cover controls">
+    <section class="card" id="photosCard">
+      <h2>1 &middot; Photos</h2>
+      <p class="hint">Drop photos here or pick files. Click a thumbnail to put it in the selected panel. Click a panel on the cover to select it, drag to pan, scroll to zoom.</p>
+      <label class="dropzone" id="dropzone">
+        <span>Add photos</span>
+        <input id="fileInput" type="file" accept="image/*" multiple hidden>
       </label>
-      <div id="photo-strip" class="photo-strip"></div>
-      <button id="fill-all" type="button" disabled>Fill all panels with this photo</button>
+      <div class="thumb-row" id="thumbRow"></div>
+      <button id="fillAllBtn" type="button" class="wide">Fill all panels with this photo</button>
+    </section>
+
+    <section class="card">
+      <h2>2 &middot; Layout</h2>
+      <div class="btn-grid" id="layoutGrid"></div>
+    </section>
+
+    <section class="card">
+      <h2>3 &middot; Colour grade</h2>
+      <div class="btn-grid" id="gradeGrid"></div>
+    </section>
+
+    <section class="card">
+      <h2>4 &middot; Caption</h2>
+      <label class="field">Title
+        <input id="titleInput" type="text" maxlength="28" value="VICE SUNSET" autocomplete="off">
+      </label>
+      <label class="field">Subtitle (neon script)
+        <input id="subtitleInput" type="text" maxlength="32" value="Golden Hour Getaway" autocomplete="off">
+      </label>
+      <label class="field">Title font
+        <select id="fontSelect">
+          <option value="anton">Anton — tall poster caps</option>
+          <option value="pacifico">Pacifico — neon script</option>
+          <option value="sans">Bold system sans</option>
+        </select>
+      </label>
+      <div class="field">Heat meter
+        <div class="stars" id="starRow" role="group" aria-label="Heat meter, one to five stars"></div>
+      </div>
+      <div class="field">One-click captions
+        <div class="preset-row" id="presetRow"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5 &middot; Selected photo</h2>
+      <div id="selectedLabel" class="hint">Panel 1 selected.</div>
+      <label class="slider">Zoom <span id="zoomVal">1.00&times;</span>
+        <input id="zoomSlider" type="range" min="1" max="4" step="0.01" value="1">
+      </label>
+      <label class="slider">Brightness <span id="brightVal">100%</span>
+        <input id="brightSlider" type="range" min="40" max="160" step="1" value="100">
+      </label>
+      <label class="slider">Contrast <span id="contrastVal">100%</span>
+        <input id="contrastSlider" type="range" min="40" max="160" step="1" value="100">
+      </label>
+      <label class="slider">Saturation <span id="satVal">100%</span>
+        <input id="satSlider" type="range" min="0" max="200" step="1" value="100">
+      </label>
+      <label class="slider">Blur <span id="blurVal">0px</span>
+        <input id="blurSlider" type="range" min="0" max="8" step="0.5" value="0">
+      </label>
+      <button id="resetPhotoBtn" type="button" class="wide">Reset this photo</button>
+    </section>
+
+    <section class="card">
+      <h2>6 &middot; Export PNG</h2>
+      <div class="btn-grid" id="exportGrid"></div>
+      <button id="exportAllBtn" type="button" class="wide primary">Export all three sizes</button>
+      <p class="hint" id="exportStatus">Ready. Exports are PNG files, saved to your downloads.</p>
+    </section>
+  </aside>
+
+  <section class="stage-wrap">
+    <div class="stage-frame">
+      <canvas id="stage" width="1080" height="1080" aria-label="Live cover preview"></canvas>
     </div>
-
-    <div class="group">
-      <h2>2 · Layout</h2>
-      <div id="layout-box" class="choices"></div>
-    </div>
-
-    <div class="group">
-      <h2>3 · Grade</h2>
-      <div id="grade-box" class="swatches"></div>
-      <p class="hint">A Vice City sunset or neon grade, painted over every photo.</p>
-    </div>
-
-    <div class="group">
-      <h2>4 · Caption</h2>
-      <label>Title
-        <input id="caption" type="text" maxlength="40" value="Sunset Heist">
-      </label>
-      <label>Subtitle (neon script)
-        <input id="subtitle" type="text" maxlength="40" value="Neon Coast">
-      </label>
-      <label>Title font
-        <select id="title-font"></select>
-      </label>
-      <div id="caption-presets" class="chips"></div>
-    </div>
-
-    <div class="group">
-      <h2>5 · Photo &amp; finish</h2>
-      <p class="hint" id="panel-label">Panel 1</p>
-      <label>Zoom <span class="val" id="zoom-val">1.00x</span>
-        <input id="zoom" type="range" min="1" max="4" step="0.05" value="1">
-      </label>
-      <label>Brightness <span class="val" id="brightness-val">100%</span>
-        <input id="brightness" type="range" min="0.4" max="1.8" step="0.05" value="1">
-      </label>
-      <label>Contrast <span class="val" id="contrast-val">105%</span>
-        <input id="contrast" type="range" min="0.5" max="1.8" step="0.05" value="1.05">
-      </label>
-      <label>Saturation <span class="val" id="saturation-val">115%</span>
-        <input id="saturation" type="range" min="0" max="2.5" step="0.05" value="1.15">
-      </label>
-      <label>Blur <span class="val" id="blur-val">0px</span>
-        <input id="blur" type="range" min="0" max="8" step="0.5" value="0">
-      </label>
-      <label>Grain <span class="val" id="grain-val">60%</span>
-        <input id="grain" type="range" min="0" max="1" step="0.05" value="0.6">
-      </label>
-      <label class="check"><input id="vignette" type="checkbox" checked> Vignette</label>
-      <div class="heat-row">Heat <span id="heat-box" class="heat-box"></span></div>
-    </div>
-
-    <div class="group">
-      <h2>6 · Export</h2>
-      <div id="size-box" class="choices"></div>
-      <button id="export" type="button" class="primary">Export PNG</button>
-      <button id="export-all" type="button">Export all three sizes</button>
-      <button id="reset" type="button">Reset cover</button>
-      <p class="hint" id="save-note">Your session saves on this machine.</p>
-      <p id="status" role="status"></p>
-    </div>
-
-    <p class="fineprint">Original art and lettering. Fonts Anton &amp; Pacifico under the SIL Open Font License (see app/fonts/). No Rockstar Games logo, artwork or font. Sample photos were made with an image model for make.fun and are free to use.</p>
-  </section>
-
-  <section class="preview" aria-label="Cover preview">
-    <canvas id="cover" width="960" height="540" aria-label="The cover preview"></canvas>
-    <p class="hint">Click a panel to select it · drag to pan · scroll to zoom · Ctrl+Z to undo</p>
+    <p class="stage-hint">Click a panel to select it &middot; drag to pan &middot; scroll to zoom &middot; Ctrl+Z to undo</p>
   </section>
 </main>
 
-<script type="module" src="./src/main.js"></script>
+<footer class="foot">
+  <p>Original art and lettering, made offline. No Rockstar Games logo, artwork or font. Fonts: Anton and Pacifico under the SIL Open Font License.</p>
+</footer>
+
+<script type="module" src="src/main.js"></script>
 </body>
 </html>
