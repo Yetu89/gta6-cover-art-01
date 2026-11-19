@@ -1,87 +1,148 @@
-// Colour grades and one-click caption presets for Vice Sunset Cover Lab.
-// A grade is a sunset-style gradient wash painted over every photo with a
-// soft-light overlay, plus the two colours the title lettering is filled with.
+// Vice Sunset Cover Lab — colour grades: a gradient map painted over every
+// photo, plus film grain, a vignette and the sunset sky behind the tilted
+// snapshot layout. A grade is a list of colour stops from shadow to highlight
+// and a strength that blends the graded picture with the original.
 
-export const GRADES = {
-  sunset: {
-    id: 'sunset',
-    name: 'Vice Sunset',
-    blurb: 'Orange dusk, pink sky',
-    wash: ['#ff9a3d', '#ff5e62', '#7b2ff7'],
-    washAlpha: 0.30,
-    tint: '#ff7e5f',
-    tintAlpha: 0.10,
-    title: ['#fff8d0', '#ffb347'],
-    sub: '#ffffff',
-    glow: '#ff5e62',
-  },
-  neon: {
-    id: 'neon',
-    name: 'Neon Nights',
-    blurb: 'Pink and cyan night',
-    wash: ['#ff2ea6', '#7b2ff7', '#00e5ff'],
-    washAlpha: 0.34,
-    tint: '#ff2ea6',
-    tintAlpha: 0.10,
-    title: ['#ffffff', '#7df9ff'],
-    sub: '#ffe9fb',
-    glow: '#ff2ea6',
-  },
-  gold: {
-    id: 'gold',
-    name: 'Palm Gold',
-    blurb: 'Warm golden hour',
-    wash: ['#f7b733', '#fc8a1a', '#b3541e'],
-    washAlpha: 0.30,
-    tint: '#ffc93d',
-    tintAlpha: 0.12,
-    title: ['#fffbe8', '#f7b733'],
-    sub: '#fff3cf',
-    glow: '#fc8a1a',
-  },
-  ocean: {
-    id: 'ocean',
-    name: 'Ocean Drive',
-    blurb: 'Teal water, blue sky',
-    wash: ['#00f5a0', '#00c9ff', '#005bea'],
-    washAlpha: 0.28,
-    tint: '#00c9ff',
-    tintAlpha: 0.10,
-    title: ['#eafffb', '#7df9ff'],
-    sub: '#ffffff',
-    glow: '#00c9ff',
-  },
-  noir: {
-    id: 'noir',
-    name: 'Mono Noir',
-    blurb: 'Black and white film',
-    wash: ['#f2f2f2', '#8a8a8a', '#111111'],
-    washAlpha: 0.22,
-    tint: '#9a9a9a',
-    tintAlpha: 0.08,
-    title: ['#ffffff', '#c9c9c9'],
-    sub: '#f2f2f2',
-    glow: '#888888',
-    mono: true,
-  },
-};
+import { drawPhotoCover, panelFilter } from './photos.js';
 
-export const GRADE_ORDER = ['sunset', 'neon', 'gold', 'ocean', 'noir'];
+/** Looks a luminance value (0..255) up in a grade's stops. */
+export function gradeColour(stops, lum) {
+  const t = lum / 255;
+  for (let i = 0; i < stops.length - 1; i += 1) {
+    const [t0, c0] = stops[i];
+    const [t1, c1] = stops[i + 1];
+    if (t >= t0 && t <= t1) {
+      const k = t1 === t0 ? 0 : (t - t0) / (t1 - t0);
+      return [
+        Math.round(c0[0] + (c1[0] - c0[0]) * k),
+        Math.round(c0[1] + (c1[1] - c0[1]) * k),
+        Math.round(c0[2] + (c1[2] - c0[2]) * k),
+      ];
+    }
+  }
+  return stops[stops.length - 1][1].slice();
+}
 
-// One-click captions. Each preset sets the title, subtitle, title font,
-// heat stars, grade and layout in a single tap.
-export const PRESETS = [
-  { name: 'Vice Sunset', title: 'VICE SUNSET', subtitle: 'Golden Hour Getaway', font: 'anton', stars: 5, grade: 'sunset', layout: 'hero3' },
-  { name: 'Neon Palms', title: 'NEON PALMS', subtitle: 'Midnight Drive', font: 'anton', stars: 4, grade: 'neon', layout: 'grid9' },
-  { name: 'Golden Tide', title: 'GOLDEN TIDE', subtitle: 'Sunset Run', font: 'anton', stars: 5, grade: 'gold', layout: 'split' },
-  { name: 'Palm Court', title: 'PALM COURT', subtitle: 'Neon Nights', font: 'pacifico', stars: 4, grade: 'neon', layout: 'grid4' },
-  { name: 'Midnight Drive', title: 'MIDNIGHT DRIVE', subtitle: 'Vice City After Dark', font: 'anton', stars: 3, grade: 'neon', layout: 'hero' },
-  { name: 'Sunset Run', title: 'SUNSET RUN', subtitle: 'Coast to Coast', font: 'sans', stars: 5, grade: 'sunset', layout: 'polaroids' },
-];
+const tableCache = new Map();
 
-// The three export sizes, in pixels.
-export const EXPORT_SIZES = [
-  { id: 'square', label: 'Square 1080 × 1080', w: 1080, h: 1080 },
-  { id: 'portrait', label: 'Portrait 1080 × 1350', w: 1080, h: 1350 },
-  { id: 'wide', label: 'Wide 1920 × 1080', w: 1920, h: 1080 },
-];
+/** A 256-entry lookup table for a grade's stops, cached by grade id. */
+function gradeColourTable(stops) {
+  const key = JSON.stringify(stops);
+  if (!tableCache.has(key)) {
+    const table = [];
+    for (let lum = 0; lum < 256; lum += 1) table.push(gradeColour(stops, lum));
+    tableCache.set(key, table);
+  }
+  return tableCache.get(key);
+}
+
+/**
+ * Paints a grade over one panel's photo: the photo is drawn to a scratch
+ * canvas at the panel's own pixel size, each pixel's luminance is mapped
+ * through the grade's stops and blended with the original, and the result is
+ * drawn back into the panel rectangle.
+ */
+export function paintGradedPhoto(ctx, photo, rect, transform, grade) {
+  if (!photo) return;
+  const w = Math.max(2, Math.round(rect.w));
+  const h = Math.max(2, Math.round(rect.h));
+  const scratch = paintGradedPhoto.scratch ?? document.createElement('canvas');
+  paintGradedPhoto.scratch = scratch;
+  scratch.width = w;
+  scratch.height = h;
+  const sctx = scratch.getContext('2d');
+  sctx.save();
+  sctx.filter = panelFilter(transform);
+  drawPhotoCover(sctx, photo.img, { x: 0, y: 0, w, h }, transform);
+  sctx.restore();
+  const image = sctx.getImageData(0, 0, w, h);
+  const data = image.data;
+  const strength = grade.strength;
+  const table = gradeColourTable(grade.stops);
+  for (let i = 0; i < data.length; i += 4) {
+    const lum = Math.round(0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]);
+    const mapped = table[lum];
+    data[i] = Math.round(data[i] + (mapped[0] - data[i]) * strength);
+    data[i + 1] = Math.round(data[i + 1] + (mapped[1] - data[i + 1]) * strength);
+    data[i + 2] = Math.round(data[i + 2] + (mapped[2] - data[i + 2]) * strength);
+  }
+  sctx.putImageData(image, 0, 0);
+  ctx.drawImage(scratch, rect.x, rect.y, rect.w, rect.h);
+}
+
+let noiseCanvas = null;
+
+/** A small tile of random grey noise, made once and reused for the grain. */
+function grainTile() {
+  if (noiseCanvas) return noiseCanvas;
+  noiseCanvas = document.createElement('canvas');
+  noiseCanvas.width = 140;
+  noiseCanvas.height = 140;
+  const nctx = noiseCanvas.getContext('2d');
+  const image = nctx.createImageData(140, 140);
+  for (let i = 0; i < image.data.length; i += 4) {
+    const v = Math.floor(Math.random() * 256);
+    image.data[i] = v;
+    image.data[i + 1] = v;
+    image.data[i + 2] = v;
+    image.data[i + 3] = 255;
+  }
+  nctx.putImageData(image, 0, 0);
+  return noiseCanvas;
+}
+
+/** Film grain over the whole cover, faint so the photos stay clean. */
+export function paintGrain(ctx, w, h, amount = 0.07) {
+  const tile = grainTile();
+  const pattern = ctx.createPattern(tile, 'repeat');
+  ctx.save();
+  ctx.globalAlpha = amount;
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.fillStyle = pattern;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+}
+
+/** A soft darkening towards the corners, the poster's vignette. */
+export function paintVignette(ctx, w, h, strength = 0.32) {
+  const radius = Math.hypot(w, h) / 2;
+  const grad = ctx.createRadialGradient(w / 2, h / 2, radius * 0.45, w / 2, h / 2, radius);
+  grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  grad.addColorStop(1, `rgba(0, 0, 0, ${strength})`);
+  ctx.save();
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+}
+
+/** The sunset sky behind the tilted snapshot layout, with a low sun. */
+export function paintSky(ctx, w, h, grade) {
+  const sky = ctx.createLinearGradient(0, 0, 0, h);
+  const stops = grade.sky;
+  stops.forEach((colour, i) => sky.addColorStop(i / (stops.length - 1), colour));
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, w, h);
+  const sunX = w * 0.72;
+  const sunY = h * 0.34;
+  const sunR = Math.min(w, h) * 0.16;
+  const glow = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunR * 2.4);
+  glow.addColorStop(0, 'rgba(255, 240, 180, 0.9)');
+  glow.addColorStop(0.35, 'rgba(255, 170, 90, 0.45)');
+  glow.addColorStop(1, 'rgba(255, 120, 60, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#fff3c4';
+  ctx.beginPath();
+  ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(20, 8, 30, 0.55)';
+  ctx.fillRect(0, h * 0.86, w, h * 0.14);
+}
+
+/** A vertical gradient fill for the caption, in the grade's colours. */
+export function titleGradient(ctx, y, h, grade) {
+  const grad = ctx.createLinearGradient(0, y, 0, y + h);
+  const colours = grade.title;
+  colours.forEach((colour, i) => grad.addColorStop(i / (colours.length - 1), colour));
+  return grad;
+}

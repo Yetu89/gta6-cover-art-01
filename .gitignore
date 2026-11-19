@@ -1,7 +1,4 @@
-# Build outputs (kept on disk, untracked)
-out/
-out2/
-
-# The competition kit and its archive (kept on disk, untracked)
-gta6-cover-art-01-kit/
-kit.tar.gz
+/out/
+/out2/
+/gta6-cover-art-01-kit/
+/kit.tar.gz
